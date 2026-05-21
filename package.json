@@ -1,13 +1,9 @@
 {
   "name": "pi-icm-hook",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi extension wrapping ICM (Infinite Context Memory) as native Pi tools and lifecycle hooks — semantic, cross-session, cross-project recall via the local icm CLI.",
-  "main": "icm.ts",
-  "files": [
-    "icm.ts"
-  ],
   "keywords": [
-    "pi",
+    "pi-package",
     "pi-extension",
     "icm",
     "memory",
@@ -16,24 +12,22 @@
     "context",
     "recall"
   ],
+  "pi": {
+    "extensions": ["./icm.ts"]
+  },
   "author": {
     "name": "Nikos Efthias"
   },
   "license": "BSD-3-Clause",
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-ai": "*"
+    "@earendil-works/pi-ai": "*",
+    "typebox": "*"
   },
   "peerDependenciesMeta": {
-    "@earendil-works/pi-coding-agent": {
-      "optional": true
-    },
-    "@earendil-works/pi-ai": {
-      "optional": true
-    }
-  },
-  "dependencies": {
-    "typebox": "*"
+    "@earendil-works/pi-coding-agent": { "optional": true },
+    "@earendil-works/pi-ai": { "optional": true },
+    "typebox": { "optional": true }
   },
   "repository": {
     "type": "git",
