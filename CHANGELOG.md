@@ -2,6 +2,23 @@
 
 All notable changes to pi-icm-hook.
 
+## [0.1.2] — 2026-05-21
+
+### Fixed
+
+- Tarball bloat: restricted `files` to `icm.ts` only (README + LICENSE auto-included)
+
+## [0.1.1] — 2026-05-21
+
+### Added
+
+- `pi` manifest in `package.json` pointing to `./icm.ts`
+- `pi-package` keyword for Pi package gallery discoverability
+
+### Changed
+
+- Moved `typebox` from `dependencies` to `peerDependencies` (Pi-bundled package)
+
 ## [0.1.0] — 2026-05-21
 
 ### Added
