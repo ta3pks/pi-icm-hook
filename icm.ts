@@ -82,6 +82,7 @@ function runICM(args: string[], timeoutMs: number): Promise<string> {
 	});
 }
 
+// For fire-and-forget invocations — discard errors
 async function safeRunICM(
 	args: string[],
 	timeoutMs: number,
@@ -92,6 +93,7 @@ async function safeRunICM(
 		return null;
 	}
 }
+
 
 // ─── Trigger Detection ────────────────────────────────────────────────
 // Ported from Hermes hermes_icm_memory/mapping.py
@@ -305,21 +307,20 @@ function formatHits(hits: ICMHit[], limit: number): string {
 	);
 }
 
+function formatRecallLabel(recallCount: number, recallTopic: string | null): string {
+	if (recallCount <= 0) return "📚 —";
+	return recallTopic ? `📚 ${recallCount} ${recallTopic}` : `📚 ${recallCount}`;
+}
+
 function renderDirective(
 	recallCount: number,
 	recallTopic: string | null,
 ): string {
-	const r =
-		recallCount > 0
-			? recallTopic
-				? `${recallCount} ${recallTopic}`
-				: `${recallCount}`
-			: "—";
 	return [
 		`ICM memory active (${recallCount} recalled).`,
 		"If this exchange is worth remembering, call icm_store with a concise summary.",
 		"Save-worthy: decisions, fixes, preferences, learnings, gotchas, status updates.",
-		`End reply with footer: 📚 ${r} · 💾 <topic if saved, — if not>`,
+		`End reply with footer: ${formatRecallLabel(recallCount, recallTopic)} · 💾 <topic if saved, — if not>`,
 	].join("\n");
 }
 
@@ -330,14 +331,8 @@ function renderFooter(
 	recallTopic: string | null,
 	saveTopic: string | null,
 ): string {
-	const r =
-		recallCount > 0
-			? recallTopic
-				? `📚 ${recallCount} ${recallTopic}`
-				: `📚 ${recallCount}`
-			: "📚 —";
 	const s = saveTopic ? `💾 ${saveTopic}` : "💾 —";
-	return `${r} · ${s}`;
+	return `${formatRecallLabel(recallCount, recallTopic)} · ${s}`;
 }
 
 // ─── Message helpers ──────────────────────────────────────────────────
@@ -409,9 +404,9 @@ export default function icmExtension(pi: ExtensionAPI) {
 		return state.available;
 	}
 
-	// ══════════════════════════════════════════════════════════════════
+	// ──────────────────────────────────────────────────────────────────
 	// TOOLS
-	// ══════════════════════════════════════════════════════════════════
+	// ──────────────────────────────────────────────────────────────────
 
 	// icm_recall
 	pi.registerTool({
@@ -442,7 +437,7 @@ export default function icmExtension(pi: ExtensionAPI) {
 				"--format",
 				"json",
 				"--limit",
-				String(params.limit || 5),
+				String(params.limit),
 			];
 			if (params.topic) args.push("-t", params.topic);
 			const raw = await safeRunICM(args, config.readTimeoutMs);
@@ -522,26 +517,27 @@ export default function icmExtension(pi: ExtensionAPI) {
 				"-c",
 				params.content.slice(0, 400),
 				"-i",
-				params.importance || config.defaultImportance,
+				params.importance,
 			];
 			if (params.keywords) args.push("-k", params.keywords);
-			const raw = await safeRunICM(args, config.writeTimeoutMs);
-			if (!raw) {
+			try {
+				const raw = await runICM(args, config.writeTimeoutMs);
+				state.lastSaveTopic = params.topic;
 				return {
 					content: [
-						{ type: "text" as const, text: "ICM store failed." },
+						{
+							type: "text" as const,
+							text: `Stored: ${params.topic}`,
+						},
+					],
+				};
+			} catch (e) {
+				return {
+					content: [
+						{ type: "text" as const, text: `ICM store failed: ${(e as Error).message}` },
 					],
 				};
 			}
-			state.lastSaveTopic = params.topic;
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text: `Stored: ${params.topic}`,
-					},
-				],
-			};
 		},
 	});
 
@@ -552,7 +548,7 @@ export default function icmExtension(pi: ExtensionAPI) {
 		description: "Update an existing ICM memory by ID.",
 		promptSnippet: "Edit an existing memory in place",
 		parameters: Type.Object({
-			id: Type.String({ description: "Memory ID to update" }),
+			id: Type.String({ description: "Memory ID to update (a specific numeric/UUID entry ID — NOT a topic name; use icm_forget with topic= to bulk-delete a topic)" }),
 			content: Type.String({
 				description: "New content (replaces existing)",
 			}),
@@ -569,25 +565,26 @@ export default function icmExtension(pi: ExtensionAPI) {
 			),
 		}),
 		async execute(_id, params, _signal, _onUpdate, _ctx) {
-			const args = ["update", params.id, "-c", params.content];
+			const args = ["update", "-c", params.content, params.id];
 			if (params.importance) args.push("-i", params.importance);
 			if (params.keywords) args.push("-k", params.keywords);
-			const raw = await safeRunICM(args, config.writeTimeoutMs);
-			if (!raw) {
+			try {
+				const raw = await runICM(args, config.writeTimeoutMs);
 				return {
 					content: [
-						{ type: "text" as const, text: "ICM update failed." },
+						{
+							type: "text" as const,
+							text: `Updated: ${params.id}`,
+						},
+					],
+				};
+			} catch (e) {
+				return {
+					content: [
+						{ type: "text" as const, text: `ICM update failed: ${(e as Error).message}` },
 					],
 				};
 			}
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text: `Updated: ${params.id}`,
-					},
-				],
-			};
 		},
 	});
 
@@ -600,7 +597,7 @@ export default function icmExtension(pi: ExtensionAPI) {
 		promptSnippet: "Delete a memory or clear a topic",
 		parameters: Type.Object({
 			id: Type.Optional(
-				Type.String({ description: "Memory ID to delete" }),
+				Type.String({ description: "Memory ID to delete (a specific numeric/UUID entry ID — use topic= instead to delete all memories in a topic)" }),
 			),
 			topic: Type.Optional(
 				Type.String({
@@ -622,25 +619,26 @@ export default function icmExtension(pi: ExtensionAPI) {
 			const args = ["forget"];
 			if (params.id) args.push(params.id);
 			if (params.topic) args.push("-t", params.topic);
-			const raw = await safeRunICM(args, config.writeTimeoutMs);
-			if (!raw) {
+			try {
+				const raw = await runICM(args, config.writeTimeoutMs);
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: "ICM forget failed.",
+							text: `Forgot: ${params.id || params.topic}`,
+						},
+					],
+				};
+			} catch (e) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `ICM forget failed: ${(e as Error).message}`,
 						},
 					],
 				};
 			}
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text: `Forgot: ${params.id || params.topic}`,
-					},
-				],
-			};
 		},
 	});
 
@@ -663,28 +661,29 @@ export default function icmExtension(pi: ExtensionAPI) {
 		async execute(_id, params, _signal, _onUpdate, _ctx) {
 			const args = ["consolidate", "-t", params.topic];
 			if (params.keep_originals) args.push("--keep-originals");
-			const raw = await safeRunICM(
-				args,
-				config.writeTimeoutMs * 2,
-			);
-			if (!raw) {
+			try {
+				const raw = await runICM(
+					args,
+					config.writeTimeoutMs * 2,
+				);
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: "ICM consolidate failed.",
+							text: `Consolidated: ${params.topic}`,
+						},
+					],
+				};
+			} catch (e) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `ICM consolidate failed: ${(e as Error).message}`,
 						},
 					],
 				};
 			}
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text: `Consolidated: ${params.topic}`,
-					},
-				],
-			};
 		},
 	});
 
@@ -722,7 +721,7 @@ export default function icmExtension(pi: ExtensionAPI) {
 		description: "List all ICM memory topics.",
 		promptSnippet: "List all memory topics",
 		parameters: Type.Object({}),
-		async execute(_id: string, _params: unknown, _signal: AbortSignal, _onUpdate: unknown, _ctx: unknown) {
+		async execute(_id, _params, _signal, _onUpdate, _ctx) {
 			const raw = await safeRunICM(["topics"], config.readTimeoutMs);
 			return {
 				content: [
@@ -742,7 +741,7 @@ export default function icmExtension(pi: ExtensionAPI) {
 		description: "Show ICM global memory statistics.",
 		promptSnippet: "Show memory statistics",
 		parameters: Type.Object({}),
-		async execute(_id: string, _params: unknown, _signal: AbortSignal, _onUpdate: unknown, _ctx: unknown) {
+		async execute(_id, _params, _signal, _onUpdate, _ctx) {
 			const raw = await safeRunICM(["stats"], config.readTimeoutMs);
 			return {
 				content: [
@@ -755,9 +754,9 @@ export default function icmExtension(pi: ExtensionAPI) {
 		},
 	});
 
-	// ══════════════════════════════════════════════════════════════════
+	// ──────────────────────────────────────────────────────────────────
 	// EVENT HANDLERS
-	// ══════════════════════════════════════════════════════════════════
+	// ──────────────────────────────────────────────────────────────────
 
 	// ── Session Start — check availability ─────────────────────────────
 
@@ -800,7 +799,7 @@ export default function icmExtension(pi: ExtensionAPI) {
 			try {
 				hits = JSON.parse(raw);
 			} catch {
-				/* empty */
+				// Not valid JSON — treat as no results
 			}
 			state.recallCount = hits.length;
 			state.recallTopic =

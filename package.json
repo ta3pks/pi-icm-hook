@@ -1,6 +1,6 @@
 {
   "name": "pi-icm-hook",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Pi extension wrapping ICM (Infinite Context Memory) as native Pi tools and lifecycle hooks — semantic, cross-session, cross-project recall via the local icm CLI.",
   "files": [
     "icm.ts"

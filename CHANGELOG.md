@@ -2,6 +2,14 @@
 
 All notable changes to pi-icm-hook.
 
+## [0.1.3] — 2026-05-26
+
+### Changed
+
+- Simplified codebase: removed dead abstraction (`runICMOrError`), eliminated redundant default
+  fallbacks, normalized tool execute signatures, extracted shared helper for recall label
+  formatting, cleaned up section separators and nested error handling.
+
 ## [0.1.2] — 2026-05-21
 
 ### Fixed
